@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { listing } from "@/data/listing";
 
 const sections = ["Photos", "Amenities", "Reviews", "Location"];
@@ -11,6 +12,37 @@ function scrollToSection(section: string) {
 
 export default function ListingPage() {
   const [showAmenities, setShowAmenities] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const syncFromHistory = () => setSelectedImage(new URLSearchParams(window.location.search).get("photo"));
+    syncFromHistory();
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedImage) return;
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") window.history.back();
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const currentIndex = listing.images.findIndex((image) => image.id === selectedImage);
+        const nextIndex = event.key === "ArrowRight" ? (currentIndex + 1) % listing.images.length : (currentIndex - 1 + listing.images.length) % listing.images.length;
+        window.history.replaceState({}, "", `?photo=${listing.images[nextIndex].id}`);
+        setSelectedImage(listing.images[nextIndex].id);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKeyDown); document.body.style.overflow = ""; };
+  }, [selectedImage]);
+
+  function openLightbox(imageId: string) {
+    window.history.pushState({}, "", `?photo=${imageId}`);
+    setSelectedImage(imageId);
+  }
 
   return (
     <main>
@@ -20,8 +52,8 @@ export default function ListingPage() {
           <div className="header-actions" aria-label="Listing actions"><button type="button" className="text-action">↗ <span>Share</span></button><button type="button" className="text-action">♡ <span>Save</span></button></div>
         </header>
         <section id="photos" className="hero-gallery" aria-label="Property photos">
-          {listing.images.map((image, index) => <button className={`gallery-tile gallery-tile-${index + 1}`} key={image.id} type="button" aria-label={`Open ${image.alt}`} style={{ backgroundImage: `url(${image.src})` }} />)}
-          <button type="button" className="show-all-photos">▧ Show all photos</button>
+          {listing.images.map((image, index) => <button className={`gallery-tile gallery-tile-${index + 1}`} key={image.id} type="button" aria-label={`Open ${image.alt}`} onClick={() => openLightbox(image.id)} style={{ backgroundImage: `url(${image.src})` }} />)}
+          <a className="show-all-photos" href="/photos">▧ Show all photos</a>
         </section>
       </div>
 
@@ -40,6 +72,7 @@ export default function ListingPage() {
         <aside className="reservation-column"><div className="offer-banner"><span aria-hidden="true">◆</span><span>Get 10% off your next stay.<br /><u>Terms apply</u></span><button type="button">Claim</button></div><div className="reservation-card"><div className="price-line"><strong>{listing.price}</strong> for {listing.nights} nights</div><div className="date-fields"><label>CHECK-IN <strong>10/18/2026</strong></label><label>CHECKOUT <strong>10/23/2026</strong></label><label className="guest-field">GUESTS <strong>2 guests</strong><span>⌄</span></label></div><div className="cancellation">Free cancellation before <strong>17 October</strong></div><button type="button" className="pink-button reserve-button">Reserve</button><p className="charge-note">You won&apos;t be charged yet</p></div><button type="button" className="report-action">⚑ Report this listing</button></aside>
       </div>
       {showAmenities && <AmenitiesModal onClose={() => setShowAmenities(false)} />}
+      {selectedImage && <Lightbox imageId={selectedImage} closeButtonRef={closeButtonRef} onClose={() => window.history.back()} />}
     </main>
   );
 }
@@ -47,3 +80,8 @@ export default function ListingPage() {
 function CalendarMonth({ month, start }: { month: string; start: number }) { const days = Array.from({ length: 35 }, (_, index) => index - start + 1); return <div className="calendar-month"><h3>{month}</h3><div className="weekday-row">{["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div><div className="day-grid">{days.map((day, index) => <span className={day === 18 || day === 23 ? "selected-day" : day < 1 ? "empty-day" : ""} key={`${month}-${index}`}>{day > 0 && day <= 31 ? day : ""}</span>)}</div></div>; }
 function ReviewCard({ name, copy }: { name: string; copy: string }) { return <article className="review-card"><div className="review-avatar">{name[0]}</div><strong>{name}</strong><small>★★★★★ · 1 week ago</small><p>{copy}</p><button type="button" className="underlined-action">Show more</button></article>; }
 function AmenitiesModal({ onClose }: { onClose: () => void }) { const groups = [{ title: "Bathroom", items: ["Hairdryer", "Cleaning products", "Shampoo", "Hot water", "Shower gel"] }, { title: "Bedroom and laundry", items: ["Washing machine", "Hangers", "Bed linen", "Room-darkening blinds", "Iron"] }, { title: "Entertainment", items: ["TV"] }, { title: "Parking and facilities", items: ["Free parking on premises", "Pool", "Hot tub", "Gym"] }, { title: "Services", items: ["Pets allowed", "Cleaning available during stay", "Long-term stays allowed", "Self check-in"] }]; return <div className="modal-backdrop" role="presentation" onClick={onClose}><section className="amenities-modal" role="dialog" aria-modal="true" aria-labelledby="amenities-title" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close amenities">×</button><h2 id="amenities-title">What this place offers</h2>{groups.map((group) => <div className="amenity-group" key={group.title}><h3>{group.title}</h3>{group.items.map((item) => <div className="modal-amenity" key={item}><span aria-hidden="true">◇</span>{item}</div>)}</div>)}</section></div>; }
+
+function Lightbox({ imageId, closeButtonRef, onClose }: { imageId: string; closeButtonRef: React.RefObject<HTMLButtonElement | null>; onClose: () => void }) {
+  const image = listing.images.find((candidate) => candidate.id === imageId) ?? listing.images[0];
+  return <div className="lightbox-backdrop" role="presentation" onClick={onClose}><section className="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" onClick={(event) => event.stopPropagation()}><button type="button" className="lightbox-close" ref={closeButtonRef} onClick={onClose} aria-label="Close photo viewer">×</button><Image src={image.src} alt={image.alt} width={1400} height={900} unoptimized /><p>{image.section}</p></section></div>;
+}
